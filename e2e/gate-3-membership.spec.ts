@@ -8,17 +8,17 @@ test.describe("Gate 3: Membership Page", () => {
     await expect(page.getByText("Good Vibes Golf")).toBeVisible();
     await expect(page.getByText("Choose Your Plan")).toBeVisible();
 
-    // All three tier names visible
-    await expect(page.getByRole("heading", { name: "Free" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Grounds Keeper" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Players Club" })).toBeVisible();
+    // All three tier names visible (exact: true to avoid matching FAQ headings)
+    await expect(page.getByRole("heading", { name: "Free", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Grounds Keeper", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Players Club", exact: true })).toBeVisible();
   });
 
   test("all tier names are visible", async ({ page }) => {
     await page.goto(`${BASE_URL}/membership`);
-    await expect(page.getByText("Free")).toBeVisible();
-    await expect(page.getByText("Grounds Keeper")).toBeVisible();
-    await expect(page.getByText("Players Club")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Free", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Grounds Keeper", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Players Club", exact: true })).toBeVisible();
   });
 
   test('"Most Popular" badge is visible on Grounds Keeper card', async ({ page }) => {
@@ -28,9 +28,6 @@ test.describe("Gate 3: Membership Page", () => {
 
   test("Grounds Keeper CTA has correct BMC level ID (309472)", async ({ page }) => {
     await page.goto(`${BASE_URL}/membership`);
-    // Find link with buymeacoffee.com that includes level 309472
-    const groundsKeeperLink = page.locator('a[href*="buymeacoffee.com"]').filter({ hasText: /trial|Trial|upgrade|Upgrade/i }).first();
-    // Look for any BMC link with the correct level
     const allBmcLinks = page.locator('a[href*="buymeacoffee.com"][href*="309472"]');
     await expect(allBmcLinks.first()).toBeVisible();
   });
@@ -51,17 +48,17 @@ test.describe("Gate 3: Membership Page", () => {
   test("FAQ section is visible", async ({ page }) => {
     await page.goto(`${BASE_URL}/membership`);
     await expect(page.getByText("Frequently Asked Questions")).toBeVisible();
-    await expect(page.getByText(/7-day free trial/i)).toBeVisible();
-    await expect(page.getByText(/cancel anytime/i)).toBeVisible();
+    await expect(page.getByText(/7-day free trial/i).first()).toBeVisible();
+    await expect(page.getByText(/cancel anytime/i).first()).toBeVisible();
   });
 
   test("page is mobile responsive (375px viewport)", async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 812 });
     await page.goto(`${BASE_URL}/membership`);
     await expect(page.getByText("Choose Your Plan")).toBeVisible();
-    await expect(page.getByText("Free")).toBeVisible();
-    await expect(page.getByText("Grounds Keeper")).toBeVisible();
-    await expect(page.getByText("Players Club")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Free", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Grounds Keeper", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Players Club", exact: true })).toBeVisible();
     await expect(page.getByText("Most Popular")).toBeVisible();
   });
 });
