@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Good Vibes Golf — It's not about the score. It's about who you're playing with.</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="design-tokens.css">
+  <link rel="stylesheet" href="home.css">
+</head>
+<body>
+  <!-- Hero Section -->
+  <main class="hero">
+    <div class="hero-content">
+      <h1 class="hero-title">Good Vibes Golf</h1>
+      <p class="hero-tagline">It's not about the score.<br>It's about who you're playing with.</p>
+      
+      <div class="hero-cta">
+        <button class="btn btn-primary" id="signUpBtn">Sign Up</button>
+        <button class="btn btn-secondary" id="loginBtn">Login</button>
+      </div>
+      
+      <p class="hero-description">
+        A social format for playing golf. Track your round, see live standings, 
+        and share the moments that make golf worth it — regardless of how you play.
+      </p>
+    </div>
+  </main>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <nav class="footer-links">
+      <a href="terms.html" class="footer-link">Terms of Service</a>
+      <span class="footer-divider">·</span>
+      <a href="privacy.html" class="footer-link">Privacy Policy</a>
+    </nav>
+    <p class="footer-copyright">© 2026 Good Vibes Golf</p>
+  </footer>
+
+  <!-- Sign Up Modal -->
+  <div class="modal" id="signUpModal">
+    <div class="modal-overlay" id="signUpOverlay"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 class="modal-title">Sign Up</h2>
+        <button class="modal-close" id="signUpClose">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-placeholder">Sign up flow coming soon...</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Login Modal -->
+  <div class="modal" id="loginModal">
+    <div class="modal-overlay" id="loginOverlay"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 class="modal-title">Login</h2>
+        <button class="modal-close" id="loginClose">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-placeholder">Login flow coming soon...</p>
+      </div>
+    </div>
+  </div>
+
+  <script src="home.js"></script>
+</body>
+</html>
