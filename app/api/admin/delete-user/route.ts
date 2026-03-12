@@ -1,10 +1,11 @@
 import { createClient } from '@supabase/supabase-js'
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  { auth: { autoRefreshToken: false, persistSession: false } }
-)
+function getAdminClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !key) throw new Error('Missing Supabase env vars')
+  return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } })
+}
 
 export async function POST(req: Request) {
   try {
@@ -14,6 +15,7 @@ export async function POST(req: Request) {
       return Response.json({ error: 'userId required' }, { status: 400 })
     }
 
+    const supabaseAdmin = getAdminClient()
     const { error } = await supabaseAdmin.auth.admin.deleteUser(userId)
 
     if (error) {
@@ -21,7 +23,8 @@ export async function POST(req: Request) {
     }
 
     return Response.json({ success: true })
-  } catch {
-    return Response.json({ error: 'Internal server error' }, { status: 500 })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Internal server error'
+    return Response.json({ error: message }, { status: 500 })
   }
 }
