@@ -94,12 +94,12 @@ See `tailwind.config.ts` for full token reference.
 - [x] Design tokens ported to Tailwind config
 - [x] Components implemented (Hero, Modals, Footer)
 - [x] Pages implemented (Home, Terms, Privacy)
-- [ ] Deployed to Vercel production
-- [ ] E2E tests written
-- [ ] E2E tests passing
+- [x] Deployed to Vercel production
+- [x] E2E tests written
+- [x] E2E tests passing
 - [ ] Shawn device validation
 
-**Production URL:** (pending deployment)
+**Production URL:** https://alto-good-vibes-golf.vercel.app
 
 ## Notes
 
