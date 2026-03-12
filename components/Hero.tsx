@@ -14,7 +14,7 @@ export default function Hero() {
           It&apos;s about who you&apos;re playing with.
         </p>
 
-        <div className="flex flex-col sm:flex-row gap-4 justify-center mb-10">
+        <div className="flex flex-col sm:flex-row gap-4 justify-center mb-6">
           <Link
             href="/signup"
             className="min-h-touch min-w-touch px-8 py-3 bg-gvg-accent hover:bg-gvg-accent-hover text-white font-display font-semibold rounded-lg shadow-md transition-all duration-200 transform hover:scale-105 flex items-center justify-center"
@@ -26,6 +26,14 @@ export default function Hero() {
             className="min-h-touch min-w-touch px-8 py-3 bg-white/10 backdrop-blur-md hover:bg-white/20 text-white font-display font-semibold rounded-lg border border-white/30 transition-all duration-200 flex items-center justify-center"
           >
             Login
+          </Link>
+        </div>
+        <div className="mb-10">
+          <Link
+            href="/membership"
+            className="text-white/70 hover:text-white text-sm font-medium underline underline-offset-2 transition-colors duration-200"
+          >
+            View Membership Plans
           </Link>
         </div>
 

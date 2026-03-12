@@ -204,30 +204,30 @@ export default function ProfilePage() {
               <label style={{ display: 'block', fontSize: 14, fontWeight: 600, color: '#374151', marginBottom: 6 }}>
                 Display Name
               </label>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <input
-                  type="text"
-                  value={nameValue}
-                  onChange={e => setNameValue(e.target.value)}
-                  disabled={!nameEditing}
-                  style={{ flex: 1, padding: '10px 14px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 15, background: nameEditing ? 'white' : '#f9fafb', color: '#111827', outline: 'none', boxSizing: 'border-box' as const }}
-                />
-                {!nameEditing ? (
+              <input
+                type="text"
+                value={nameValue}
+                onChange={e => setNameValue(e.target.value)}
+                disabled={!nameEditing}
+                style={{ width: '100%', padding: '10px 14px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 15, background: nameEditing ? 'white' : '#f9fafb', color: '#111827', outline: 'none', boxSizing: 'border-box' as const }}
+              />
+              <p style={{ fontSize: 12, color: '#6b7280', marginTop: 6 }}>This is how you&apos;ll appear to other players</p>
+              {!nameEditing ? (
+                <div style={{ marginTop: 8 }}>
                   <button onClick={() => setNameEditing(true)} style={{ padding: '10px 16px', background: '#2d7a4f', color: 'white', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
                     Edit
                   </button>
-                ) : (
-                  <>
-                    <button onClick={handleSaveName} style={{ padding: '10px 16px', background: '#f97316', color: 'white', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
-                      Save
-                    </button>
-                    <button onClick={handleCancelName} style={{ padding: '10px 16px', background: '#e5e7eb', color: '#374151', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
-                      Cancel
-                    </button>
-                  </>
-                )}
-              </div>
-              <p style={{ fontSize: 12, color: '#6b7280', marginTop: 6 }}>This is how you&apos;ll appear to other players</p>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                  <button onClick={handleSaveName} style={{ padding: '10px 16px', background: '#f97316', color: 'white', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+                    Save
+                  </button>
+                  <button onClick={handleCancelName} style={{ padding: '10px 16px', background: '#e5e7eb', color: '#374151', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+                    Cancel
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Phone */}
