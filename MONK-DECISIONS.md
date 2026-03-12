@@ -62,6 +62,28 @@ Document all questions and responses in this file.
 
 ---
 
+## Gate 3 (2026-03-12)
+
+### Decision: Immediate tier downgrade on cancellation
+**Decision:** No grace period on BMC cancellation — tier drops to `free` immediately.  
+**Rationale:** Simpler, avoids edge cases. Can add grace period in a future gate if needed.
+
+### Decision: Infrastructure applied by Monk (not manual)
+**Items done:** Supabase migration (SQL Editor via browser automation), BMC webhook registration, Vercel env var (`BMC_WEBHOOK_SECRET`), Vercel redeploy.  
+**Result:** No manual steps required from Shawn. Gate 3 infrastructure is fully live.
+
+### Decision: E2E selector fixes post-run (2026-03-12)
+**Issue:** Initial spec used ambiguous selectors (`getByText("Free")`, `getByRole("heading", { name: "Free" })`) that matched multiple elements (FAQ headings, list items).  
+**Fix:** Used `exact: true` on heading role matchers and `.first()` for repeated text patterns.  
+**Result:** 40/40 passing across 5 browsers.
+
+---
+
+**Gate 3 E2E: 40/40 PASSING — 2026-03-12**  
+**Awaiting Shawn device validation to close gate.**
+
+---
+
 ## Active Project State
 
 | Item             | Value                                                 |
@@ -69,6 +91,5 @@ Document all questions and responses in this file.
 | Production URL   | https://alto-good-vibes-golf.vercel.app               |
 | GitHub           | https://github.com/shawncheatham/alto-good-vibes-golf |
 | Supabase project | `agvg-prod-v2` (pedqpmuclnoufqxvlhzx)                 |
-| Current gate     | Gate 2 (pending device validation)                    |
-| Next gate        | Gate 3 — Membership                                   |
-|                  |                                                       |
+| Current gate     | Gate 3 (pending device validation)                    |
+| Next gate        | Gate 4 — Game Formats / Access Control UI             |
