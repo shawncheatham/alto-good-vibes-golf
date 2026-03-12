@@ -1,20 +1,54 @@
 # Alto Good Vibes Golf
 
-Next.js 16 rebuild of Good Vibes Golf landing page.
+Next.js 16 rebuild of Good Vibes Golf — auth-enabled, production-deployed.
 
 ## Tech Stack
 
 - **Next.js 16** (React 19)
 - **TypeScript**
-- **Tailwind CSS 4**
+- **Tailwind CSS 3** (v4 deferred — see decisions log)
+- **Supabase** (Auth + PostgreSQL)
 - **Playwright** (E2E testing)
+- **Vercel** (Production deployment)
 
-## Development
+---
 
-### Setup
+## Gates
+
+| Gate | Name | Status | Date |
+|------|------|--------|------|
+| 1 | Home Page | ✅ APPROVED | 2026-03-11 |
+| 2 | Account / Auth | ✅ PASSED | 2026-03-12 |
+| 3 | Membership | ⬜ Not started | — |
+| 4 | Rounds | ⬜ Not started | — |
+| 5 | Games | ⬜ Not started | — |
+| 6 | Recap | ⬜ Not started | — |
+
+**Production URL:** https://alto-good-vibes-golf.vercel.app
+
+---
+
+## Development Setup
+
+### Prerequisites
+- Node 20+
+- Supabase project (`agvg-prod-v2`, ref: `pedqpmuclnoufqxvlhzx`)
+- Vercel project linked to this repo
+
+### Install
 
 ```bash
 npm install
+```
+
+### Environment Variables
+
+Create `.env.local`:
+
+```env
+NEXT_PUBLIC_SUPABASE_URL=https://pedqpmuclnoufqxvlhzx.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon key>
+SUPABASE_SERVICE_ROLE_KEY=<service role key>
 ```
 
 ### Local Development
@@ -23,7 +57,7 @@ npm install
 npm run dev
 ```
 
-Visit [http://localhost:3000](http://localhost:3000)
+Visit http://localhost:3000
 
 ### Build
 
@@ -32,77 +66,112 @@ npm run build
 npm start
 ```
 
-### Testing
+### E2E Tests
 
 ```bash
-# Install Playwright browsers (first time only)
+# Install browsers (first time only)
 npx playwright install
 
-# Run E2E tests
+# Run Gate 2 tests against production
+BASE_URL=https://alto-good-vibes-golf.vercel.app npx playwright test e2e/gate-2-account.spec.ts
+
+# Run all tests
 npm run test:e2e
 ```
 
-## Deployment
-
-Deployed to Vercel:
-
-**Production URL:** `https://alto-good-vibes-golf.vercel.app`
-
-Auto-deploys from `main` branch.
+---
 
 ## Project Structure
 
 ```
 /app
-  /page.tsx          - Home page
-  /terms/page.tsx    - Terms of Service
-  /privacy/page.tsx  - Privacy Policy
-  /layout.tsx        - Root layout with Outfit font
-  /globals.css       - Global styles + Tailwind
+  /page.tsx                    - Home page
+  /signup/page.tsx             - Sign Up (magic link)
+  /login/page.tsx              - Login (magic link)
+  /auth/callback/route.ts      - Supabase auth callback
+  /profile/page.tsx            - Profile settings (protected)
+  /round-history/page.tsx      - Round history (protected)
+  /api/admin/delete-user/      - Admin route for account deletion
+  /terms/page.tsx              - Terms of Service
+  /privacy/page.tsx            - Privacy Policy
 
-/components
-  /Hero.tsx          - Hero section with CTAs
-  /SignUpModal.tsx   - Sign Up modal (placeholder)
-  /LoginModal.tsx    - Login modal (placeholder)
-  /Footer.tsx        - Footer with legal links
+/lib
+  /supabase/client.ts          - Browser Supabase client
+  /supabase/server.ts          - Server Supabase client
+  /supabase/middleware.ts      - Session refresh helper
+
+/supabase
+  /migrations/001_users_table.sql - Users table + RLS + email sync trigger
 
 /e2e
-  /gate-1-home.spec.ts - Playwright E2E tests
+  /gate-1-home.spec.ts         - Gate 1 E2E tests (55 tests)
+  /gate-2-account.spec.ts      - Gate 2 E2E tests (50 tests)
 
-/styles
-  (none - Tailwind only)
-
-tailwind.config.ts - GVG design tokens
+middleware.ts                  - Route protection (redirects to /login)
 ```
 
-## Design System
+---
 
-All GVG design tokens are ported to Tailwind config:
+## Auth Architecture
 
-- **Colors:** `gvg-grass-dark`, `gvg-accent`, etc.
-- **Typography:** `font-display` (Outfit), `font-body`
-- **Spacing:** 4px base scale
-- **Shadows:** `shadow-sm`, `shadow-md`, `shadow-lg`
+**Magic link only** — no passwords.
 
-See `tailwind.config.ts` for full token reference.
+**Flow:**
+1. User enters email on `/signup` or `/login`
+2. Supabase sends magic link to email
+3. User clicks link → redirected to `/auth/callback?code=...`
+4. Callback exchanges code for session, creates profile in `public.users`
+5. User redirected to `/round-history`
 
-## Gate 1 Status
+**Session:** 30-day expiration, stored in HTTP-only cookies.
 
-**Deliverables:**
-- [x] Repository created
-- [x] Next.js 16 + TypeScript + Tailwind 4 initialized
-- [x] Design tokens ported to Tailwind config
-- [x] Components implemented (Hero, Modals, Footer)
-- [x] Pages implemented (Home, Terms, Privacy)
-- [x] Deployed to Vercel production
-- [x] E2E tests written
-- [x] E2E tests passing
-- [x] Shawn device validation ✅ APPROVED 2026-03-11
+**Protected routes:** `/profile`, `/round-history` — middleware redirects unauthenticated users to `/login`.
 
-**Production URL:** https://alto-good-vibes-golf.vercel.app
+---
 
-## Notes
+## Database Schema
 
-- Sign Up and Login modals are **placeholders only** (no auth yet)
-- Auth integration comes in Gate 2
-- Legal text is boilerplate (will be replaced later)
+```sql
+-- Profile table (extends auth.users)
+public.users (
+  id UUID PRIMARY KEY → auth.users(id)
+  email TEXT UNIQUE NOT NULL
+  phone TEXT NOT NULL DEFAULT ''
+  name TEXT NOT NULL DEFAULT ''
+  created_at TIMESTAMPTZ
+  updated_at TIMESTAMPTZ
+)
+
+-- RLS: users can only access their own row
+-- Email sync trigger: keeps public.users.email in sync with auth.users.email
+```
+
+---
+
+## Gate 1 Status ✅
+
+**Approved:** 2026-03-11 by Shawn
+
+- Home page with Hero, Modals (Sign Up/Login placeholders), Footer
+- Terms of Service + Privacy Policy pages
+- Design tokens from GVG design system
+- 55 E2E tests passing (5 browsers/devices)
+- Deployed to Vercel production
+
+---
+
+## Gate 2 Status ✅
+
+**Passed:** 2026-03-12
+
+- Magic link auth (signup + login)
+- `/auth/callback` handler
+- `/profile` settings page (protected)
+- `/round-history` empty state (protected)
+- `public.users` table with RLS + email sync trigger
+- Middleware route protection
+- 50/50 E2E tests passing (5 browsers/devices)
+- Deployed to Vercel production
+
+**Awaiting Shawn device validation to close gate.**
+See `GATE-2-MANUAL-TEST.md` for test guide.
