@@ -3,11 +3,17 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { calculateStandings, LedgerEntry } from "@/lib/scoring";
+import { GAMES, GameId } from "@/lib/games";
 
 interface Round {
   id: string;
   course_name: string;
   game: string;
+  game_id?: string;
+  game_label?: string;
+  custom_rules?: Record<string, unknown> | null;
+  metadata?: { chaosMultipliers?: number[] } | null;
   status: string;
   holes: number;
   created_at: string;
@@ -24,35 +30,6 @@ interface ScoreEntry {
   player_id: string;
   hole: number;
   strokes: number | null;
-}
-
-interface SkinResult {
-  skinsByPlayer: Record<string, number>;
-  tiesByPlayer: Record<string, number>;
-  carryover: number;
-}
-
-function calculateSkins(scores: ScoreEntry[], players: Player[]): SkinResult {
-  let carryover = 0;
-  const skinsByPlayer: Record<string, number> = {};
-  const tiesByPlayer: Record<string, number> = {};
-
-  for (let hole = 1; hole <= 18; hole++) {
-    const holeScores = scores.filter(s => s.hole === hole && s.strokes != null);
-    if (holeScores.length < players.length) { carryover++; continue; }
-
-    const minScore = Math.min(...holeScores.map(s => s.strokes as number));
-    const winners = holeScores.filter(s => s.strokes === minScore);
-
-    if (winners.length === 1) {
-      skinsByPlayer[winners[0].player_id] = (skinsByPlayer[winners[0].player_id] || 0) + 1 + carryover;
-      carryover = 0;
-    } else {
-      winners.forEach(w => { tiesByPlayer[w.player_id] = (tiesByPlayer[w.player_id] || 0) + 1; });
-      carryover++;
-    }
-  }
-  return { skinsByPlayer, tiesByPlayer, carryover };
 }
 
 export default function ScorecardPage() {
@@ -72,7 +49,6 @@ export default function ScorecardPage() {
   const lastEntryRef = useRef<{ player_id: string; hole: number; strokes: number } | null>(null);
   const holeStripRef = useRef<HTMLDivElement>(null);
 
-  // Load round data
   useEffect(() => {
     const load = async () => {
       const [{ data: r }, { data: p }, { data: s }] = await Promise.all([
@@ -87,7 +63,6 @@ export default function ScorecardPage() {
       }
       if (s) setScores(s);
 
-      // Find first hole with missing scores
       if (p && s) {
         for (let h = 1; h <= 18; h++) {
           const holeEntries = s.filter((e: ScoreEntry) => e.hole === h);
@@ -102,7 +77,6 @@ export default function ScorecardPage() {
     load();
   }, [id, supabase]);
 
-  // Scroll active hole into view
   useEffect(() => {
     if (holeStripRef.current) {
       const activeEl = holeStripRef.current.querySelector(`[data-hole="${currentHole}"]`) as HTMLElement;
@@ -191,7 +165,89 @@ export default function ScorecardPage() {
     router.push(`/round/${id}/recap`);
   };
 
-  const { skinsByPlayer, tiesByPlayer, carryover } = calculateSkins(scores, players);
+  // Multi-game standings
+  const gameId = round?.game_id || round?.game || "skins";
+  const ledgerState = calculateStandings(gameId, scores, players, {
+    customRules: round?.custom_rules ?? undefined,
+    multipliers: round?.metadata?.chaosMultipliers,
+  });
+  const { entries, carryover, matchResult } = ledgerState;
+
+  // Chaos multiplier for current hole
+  const chaosMultiplier = gameId === "chaosskins"
+    ? (round?.metadata?.chaosMultipliers?.[currentHole - 1] ?? 1)
+    : null;
+
+  // Game display name
+  const gameDisplayName = round?.game_label || (GAMES[gameId as GameId]?.name ?? "Skins");
+
+  const renderLedgerEntry = (entry: LedgerEntry, rank: number) => {
+    // Determine display based on game type
+    if (gameId === "nassau") {
+      return (
+        <div key={entry.playerId} style={{ background: "var(--gvg-white)", border: "2px solid var(--gvg-gray-200)", borderRadius: 12, padding: 16 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <h3 style={{ fontFamily: "var(--gvg-font-display)", fontSize: 18, fontWeight: 700, color: "var(--gvg-gray-900)", margin: 0 }}>{entry.name}</h3>
+            <span style={{ fontSize: 16, fontWeight: 700, color: (entry.skins ?? 0) > 0 ? "var(--gvg-positive)" : "var(--gvg-gray-500)" }}>
+              {entry.skins ?? 0} W
+            </span>
+          </div>
+          <div style={{ display: "flex", gap: 12, fontSize: 13, color: "var(--gvg-gray-600)" }}>
+            <span>F: {entry.front ?? "—"}</span>
+            <span>B: {entry.back ?? "—"}</span>
+            <span>T: {entry.total ?? "—"}</span>
+          </div>
+        </div>
+      );
+    }
+
+    if (gameId === "matchplay") {
+      return (
+        <div key={entry.playerId} style={{ background: "var(--gvg-white)", border: "2px solid var(--gvg-gray-200)", borderRadius: 12, padding: 16 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <h3 style={{ fontFamily: "var(--gvg-font-display)", fontSize: 18, fontWeight: 700, color: "var(--gvg-gray-900)", margin: 0 }}>{entry.name}</h3>
+            <span style={{ fontSize: 16, fontWeight: 700, color: (entry.matchScore ?? 0) > 0 ? "var(--gvg-positive)" : "var(--gvg-gray-500)" }}>
+              {(entry.matchScore ?? 0) > 0 ? `+${entry.matchScore}` : entry.matchScore ?? 0}
+            </span>
+          </div>
+        </div>
+      );
+    }
+
+    if (gameId === "stableford") {
+      return (
+        <div key={entry.playerId} style={{ background: "var(--gvg-white)", border: "2px solid var(--gvg-gray-200)", borderRadius: 12, padding: 16 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <h3 style={{ fontFamily: "var(--gvg-font-display)", fontSize: 18, fontWeight: 700, color: "var(--gvg-gray-900)", margin: 0 }}>{entry.name}</h3>
+            <span style={{ fontSize: 24, fontWeight: 700, fontFamily: "var(--gvg-font-mono)", color: (entry.points ?? 0) > 0 ? "var(--gvg-positive)" : "var(--gvg-gray-500)" }}>
+              {entry.points ?? 0} pts
+            </span>
+          </div>
+          <p style={{ fontSize: 14, color: "var(--gvg-gray-600)", marginTop: 8 }}>
+            Rank #{rank + 1}
+          </p>
+        </div>
+      );
+    }
+
+    // Default: skins-based (skins, wolf, chaosskins, custom)
+    const skins = entry.skins ?? 0;
+    const ties = entry.ties ?? 0;
+    return (
+      <div key={entry.playerId} style={{ background: "var(--gvg-white)", border: "2px solid var(--gvg-gray-200)", borderRadius: 12, padding: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <h3 style={{ fontFamily: "var(--gvg-font-display)", fontSize: 18, fontWeight: 700, color: "var(--gvg-gray-900)", margin: 0 }}>{entry.name}</h3>
+          <span style={{ fontSize: 24, fontWeight: 700, fontFamily: "var(--gvg-font-mono)", color: skins > 0 ? "var(--gvg-positive)" : "var(--gvg-gray-500)" }}>
+            {skins} skin{skins !== 1 ? "s" : ""}
+          </span>
+        </div>
+        <p style={{ fontSize: 14, color: "var(--gvg-gray-600)", marginTop: 8 }}>
+          {skins > 0 ? `${skins} hole${skins !== 1 ? "s" : ""} won` : "0 holes won"}
+          {ties > 0 ? ` · ${ties} tie${ties !== 1 ? "s" : ""}` : ""}
+        </p>
+      </div>
+    );
+  };
 
   if (loading) {
     return (
@@ -219,7 +275,10 @@ export default function ScorecardPage() {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
           <div>
             <h1 style={{ fontFamily: "var(--gvg-font-display)", fontSize: 18, fontWeight: 700, margin: 0 }}>Good Vibes Golf</h1>
-            <p style={{ fontSize: 14, opacity: 0.9, marginTop: 4 }}>Skins · Hole {currentHole} of {round.holes}</p>
+            <p style={{ fontSize: 14, opacity: 0.9, marginTop: 4 }}>
+              {gameDisplayName} · Hole {currentHole} of {round.holes}
+              {chaosMultiplier && chaosMultiplier > 1 ? ` · ${chaosMultiplier}× multiplier` : ""}
+            </p>
           </div>
           <div style={{ position: "relative" }}>
             <button
@@ -254,6 +313,7 @@ export default function ScorecardPage() {
         <div ref={holeStripRef} style={{ display: "flex", gap: 8, minWidth: "min-content", padding: "0 8px" }}>
           {Array.from({ length: 18 }, (_, i) => i + 1).map(hole => {
             const state = getHoleState(hole);
+            const mult = gameId === "chaosskins" ? (round?.metadata?.chaosMultipliers?.[hole - 1] ?? 1) : null;
             return (
               <div key={hole} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, minWidth: 44 }} data-hole={hole}>
                 <button
@@ -272,8 +332,8 @@ export default function ScorecardPage() {
                 >
                   {hole}
                 </button>
-                <span style={{ fontSize: 16, lineHeight: 1 }}>
-                  {state === "complete" ? "✓" : state === "active" ? "◆" : "○"}
+                <span style={{ fontSize: 14, lineHeight: 1 }}>
+                  {state === "complete" ? "✓" : state === "active" ? "◆" : mult && mult > 1 ? `${mult}×` : "○"}
                 </span>
               </div>
             );
@@ -376,30 +436,15 @@ export default function ScorecardPage() {
             <h2 style={{ fontFamily: "var(--gvg-font-display)", fontSize: 20, fontWeight: 700, color: "var(--gvg-gray-900)", margin: 0 }}>
               Running Standings
             </h2>
+            {matchResult && (
+              <p style={{ fontSize: 14, color: "var(--gvg-grass)", fontWeight: 600, marginTop: 4 }}>{matchResult}</p>
+            )}
           </div>
 
           <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
-            {[...players]
-              .sort((a, b) => (skinsByPlayer[b.id] || 0) - (skinsByPlayer[a.id] || 0))
-              .map(player => {
-                const skins = skinsByPlayer[player.id] || 0;
-                const ties = tiesByPlayer[player.id] || 0;
-                return (
-                  <div key={player.id} style={{ background: "var(--gvg-white)", border: "2px solid var(--gvg-gray-200)", borderRadius: 12, padding: 16, transition: "all 0.2s" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <h3 style={{ fontFamily: "var(--gvg-font-display)", fontSize: 18, fontWeight: 700, color: "var(--gvg-gray-900)", margin: 0 }}>{player.name}</h3>
-                      <span style={{ fontSize: 24, fontWeight: 700, fontFamily: "var(--gvg-font-mono)", color: skins > 0 ? "var(--gvg-positive)" : "var(--gvg-gray-500)" }}>
-                        {skins} skin{skins !== 1 ? "s" : ""}
-                      </span>
-                    </div>
-                    <p style={{ fontSize: 14, color: "var(--gvg-gray-600)", marginTop: 8 }}>
-                      {skins > 0 ? `${skins} hole${skins !== 1 ? "s" : ""} won` : "0 holes won"}
-                      {ties > 0 ? ` · ${ties} tie${ties !== 1 ? "s" : ""}` : ""}
-                    </p>
-                  </div>
-                );
-              })}
-            {carryover > 0 && (
+            {entries.map((entry, rank) => renderLedgerEntry(entry, rank))}
+
+            {carryover != null && carryover > 0 && (gameId === "skins" || gameId === "chaosskins" || gameId === "wolf" || gameId === "custom") && (
               <div style={{ padding: "12px 16px", background: "var(--gvg-sand-light)", border: "2px solid var(--gvg-sand)", borderRadius: 12, fontSize: 14, color: "var(--gvg-gray-700)" }}>
                 🏌️ {carryover} skin{carryover !== 1 ? "s" : ""} carrying over
               </div>
@@ -475,7 +520,6 @@ export default function ScorecardPage() {
         </div>
       )}
 
-      {/* Close menu on outside click */}
       {showMenu && (
         <div style={{ position: "fixed", inset: 0, zIndex: 150 }} onClick={() => setShowMenu(false)} />
       )}

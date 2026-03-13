@@ -3,6 +3,8 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import GameCatalog, { CustomRules } from "@/components/GameCatalog";
+import { Tier } from "@/lib/games";
 
 interface Course {
   id?: string | number;
@@ -15,11 +17,26 @@ interface Course {
 
 type Step = "course" | "players" | "confirm";
 
+function generateMultipliers(seed: string): number[] {
+  const base = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 3];
+  // Simple deterministic shuffle using seed characters
+  const arr = [...base];
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) {
+    h = (Math.imul(31, h) + seed.charCodeAt(i)) | 0;
+  }
+  for (let i = arr.length - 1; i > 0; i--) {
+    h = (Math.imul(1664525, h) + 1013904223) | 0;
+    const j = Math.abs(h) % (i + 1);
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
 export default function CreateRoundPage() {
   const router = useRouter();
   const supabase = createClient();
 
-  // Step state
   const [step, setStep] = useState<Step>("course");
 
   // Course search state
@@ -31,12 +48,31 @@ export default function CreateRoundPage() {
 
   // Player state
   const [players, setPlayers] = useState<string[]>(["", "", "", ""]);
+  const [visiblePlayers, setVisiblePlayers] = useState(1);
+
+  // Game state
+  const [selectedGame, setSelectedGame] = useState("skins");
+  const [gameLabel, setGameLabel] = useState("Skins");
+  const [customRules, setCustomRules] = useState<CustomRules | null>(null);
+
+  // User tier
+  const [userTier, setUserTier] = useState<Tier>("free");
 
   // Submit state
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
-  // Course search with debounce
+  // Load user tier
+  useEffect(() => {
+    const loadTier = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data } = await supabase.from("users").select("tier").eq("id", user.id).single();
+      if (data?.tier) setUserTier(data.tier as Tier);
+    };
+    loadTier();
+  }, [supabase]);
+
   const handleCourseInput = useCallback((q: string) => {
     setCourseQuery(q);
     setSelectedCourse(null);
@@ -66,22 +102,11 @@ export default function CreateRoundPage() {
     setCourseResults([]);
   };
 
-  // Player helpers
   const updatePlayer = (i: number, val: string) => {
     const next = [...players];
     next[i] = val;
     setPlayers(next);
   };
-
-  const activePlayerCount = () => {
-    let count = 1;
-    for (let i = 1; i < 4; i++) {
-      if (players[i] !== undefined && i <= visiblePlayers - 1) count = i + 1;
-    }
-    return count;
-  };
-
-  const [visiblePlayers, setVisiblePlayers] = useState(1);
 
   const addPlayer = () => {
     if (visiblePlayers < 4) setVisiblePlayers(v => v + 1);
@@ -101,8 +126,18 @@ export default function CreateRoundPage() {
     setPlayers(next);
   };
 
-  // Create the round
+  const activePlayers = players.slice(0, visiblePlayers).filter(n => n.trim());
+
+  // Wolf requires exactly 4 players
+  const wolfPlayerError = selectedGame === "wolf" && activePlayers.length !== 4
+    ? `Wolf requires exactly 4 players (you have ${activePlayers.length})`
+    : null;
+
   const createRound = async () => {
+    if (wolfPlayerError) {
+      setError(wolfPlayerError);
+      return;
+    }
     setSubmitting(true);
     setError("");
     try {
@@ -119,15 +154,37 @@ export default function CreateRoundPage() {
         ? String(selectedCourse.id ?? "")
         : undefined;
 
+      // Build metadata for chaos skins
+      let metadata: Record<string, unknown> | null = null;
+      if (selectedGame === "chaosskins") {
+        // We'll use round id as seed after insert, so generate with timestamp for now
+        // Will be updated once we have the round id
+        metadata = { chaosMultipliers: generateMultipliers(Date.now().toString()) };
+      }
+
       const { data: round, error: roundErr } = await supabase
         .from("rounds")
-        .insert({ course_name: courseName, course_id: courseId, game: "skins", created_by: user.id })
+        .insert({
+          course_name: courseName,
+          course_id: courseId,
+          game: selectedGame,
+          game_id: selectedGame,
+          game_label: gameLabel,
+          custom_rules: customRules ?? null,
+          metadata,
+          created_by: user.id,
+        })
         .select()
         .single();
 
       if (roundErr || !round) throw roundErr || new Error("Failed to create round");
 
-      const activePlayers = players.slice(0, visiblePlayers).filter(n => n.trim());
+      // Update chaos skins multipliers with round id as seed
+      if (selectedGame === "chaosskins") {
+        const deterministicMultipliers = generateMultipliers(round.id);
+        await supabase.from("rounds").update({ metadata: { chaosMultipliers: deterministicMultipliers } }).eq("id", round.id);
+      }
+
       if (activePlayers.length === 0) throw new Error("Add at least one player");
 
       const { error: playersErr } = await supabase
@@ -310,7 +367,7 @@ export default function CreateRoundPage() {
                 disabled={!players[0]?.trim()}
                 style={{ flex: 2, padding: "14px", background: players[0]?.trim() ? "var(--gvg-grass-dark)" : "var(--gvg-gray-300)", color: "white", fontSize: 15, fontWeight: 700, border: "none", borderRadius: 12, cursor: players[0]?.trim() ? "pointer" : "not-allowed", minHeight: 52 }}
               >
-                Next: Confirm →
+                Next: Select Game →
               </button>
             </div>
           </div>
@@ -320,8 +377,9 @@ export default function CreateRoundPage() {
         {step === "confirm" && (
           <div>
             <h2 style={{ fontFamily: "var(--gvg-font-display)", fontSize: 24, fontWeight: 700, color: "var(--gvg-gray-900)", marginBottom: 8 }}>Ready to tee off?</h2>
-            <p style={{ fontSize: 14, color: "var(--gvg-gray-600)", marginBottom: 24 }}>Review your round details before starting.</p>
+            <p style={{ fontSize: 14, color: "var(--gvg-gray-600)", marginBottom: 20 }}>Choose your game and review your round details.</p>
 
+            {/* Course & Players summary */}
             <div style={{ background: "var(--gvg-gray-50)", border: "2px solid var(--gvg-gray-200)", borderRadius: 16, padding: 20, marginBottom: 20 }}>
               <div style={{ marginBottom: 16 }}>
                 <div style={{ fontSize: 12, fontWeight: 600, color: "var(--gvg-gray-500)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>Course</div>
@@ -333,15 +391,10 @@ export default function CreateRoundPage() {
                 )}
               </div>
 
-              <div style={{ marginBottom: 16 }}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: "var(--gvg-gray-500)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>Game</div>
-                <div style={{ fontSize: 16, fontWeight: 600, color: "var(--gvg-gray-900)" }}>Skins · 18 Holes</div>
-              </div>
-
               <div>
                 <div style={{ fontSize: 12, fontWeight: 600, color: "var(--gvg-gray-500)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>Players</div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  {players.slice(0, visiblePlayers).filter(n => n.trim()).map((name, i) => (
+                  {activePlayers.map((name, i) => (
                     <div key={i} style={{ display: "flex", alignItems: "center", gap: 10 }}>
                       <div style={{ width: 28, height: 28, borderRadius: "50%", background: "var(--gvg-grass-dark)", color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 700 }}>{i + 1}</div>
                       <span style={{ fontSize: 16, fontWeight: 600, color: "var(--gvg-gray-900)" }}>{name}</span>
@@ -351,9 +404,23 @@ export default function CreateRoundPage() {
               </div>
             </div>
 
-            {error && (
+            {/* Game Catalog */}
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: "var(--gvg-gray-500)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 12 }}>Select a Game</div>
+              <GameCatalog
+                userTier={userTier}
+                selectedGame={selectedGame}
+                onSelect={(id, label, rules) => {
+                  setSelectedGame(id);
+                  setGameLabel(label);
+                  setCustomRules(rules ?? null);
+                }}
+              />
+            </div>
+
+            {(error || wolfPlayerError) && (
               <div style={{ padding: "12px 16px", background: "#fef2f2", border: "2px solid #fecaca", borderRadius: 10, color: "#dc2626", fontSize: 14, marginBottom: 16 }}>
-                {error}
+                {error || wolfPlayerError}
               </div>
             )}
 
@@ -367,10 +434,10 @@ export default function CreateRoundPage() {
               </button>
               <button
                 onClick={createRound}
-                disabled={submitting}
-                style={{ flex: 2, padding: "14px", background: submitting ? "var(--gvg-gray-400)" : "var(--gvg-accent)", color: "white", fontSize: 16, fontWeight: 700, border: "none", borderRadius: 12, cursor: submitting ? "not-allowed" : "pointer", minHeight: 52 }}
+                disabled={submitting || !!wolfPlayerError}
+                style={{ flex: 2, padding: "14px", background: submitting || wolfPlayerError ? "var(--gvg-gray-400)" : "var(--gvg-accent)", color: "white", fontSize: 16, fontWeight: 700, border: "none", borderRadius: 12, cursor: submitting || wolfPlayerError ? "not-allowed" : "pointer", minHeight: 52 }}
               >
-                {submitting ? "Starting..." : "⛳ Start Round"}
+                {submitting ? "Starting..." : `⛳ Start Round — ${gameLabel}`}
               </button>
             </div>
           </div>
