@@ -12,9 +12,9 @@ test.describe("Gate 1: Home Page", () => {
       page.getByText("It's not about the score.", { exact: false })
     ).toBeVisible();
 
-    // CTAs present
-    await expect(page.getByRole("button", { name: "Sign Up" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Login" })).toBeVisible();
+    // CTAs present (Gate 2 changed these from buttons to links)
+    await expect(page.getByRole("link", { name: "Sign Up" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Login" })).toBeVisible();
 
     // Footer links present
     await expect(page.getByRole("link", { name: "Terms of Service" })).toBeVisible();
@@ -24,76 +24,19 @@ test.describe("Gate 1: Home Page", () => {
     await expect(page.getByText("© 2026 Good Vibes Golf")).toBeVisible();
   });
 
-  test("Sign Up modal opens and closes via button click", async ({ page }) => {
+  // Gate 2 replaced modals with dedicated /signup and /login routes.
+  // These tests have been updated to reflect the new navigation behavior.
+
+  test("Sign Up link navigates to /signup", async ({ page }) => {
     await page.goto("/");
-
-    // Open modal
-    await page.getByRole("button", { name: "Sign Up" }).click();
-    await expect(
-      page.getByRole("heading", { name: "Sign Up", exact: true })
-    ).toBeVisible();
-    await expect(page.getByText("Sign up flow coming soon...")).toBeVisible();
-
-    // Close via X button
-    await page.getByLabel("Close modal").click();
-    await expect(page.getByText("Sign up flow coming soon...")).not.toBeVisible();
+    await page.getByRole("link", { name: "Sign Up" }).click();
+    await expect(page).toHaveURL("/signup");
   });
 
-  test("Sign Up modal closes via overlay click", async ({ page }) => {
+  test("Login link navigates to /login", async ({ page }) => {
     await page.goto("/");
-
-    await page.getByRole("button", { name: "Sign Up" }).click();
-    await expect(page.getByText("Sign up flow coming soon...")).toBeVisible();
-
-    // Click overlay (not the modal content)
-    await page.locator('[class*="fixed inset-0"]').first().click({ position: { x: 10, y: 10 } });
-    await expect(page.getByText("Sign up flow coming soon...")).not.toBeVisible();
-  });
-
-  test("Sign Up modal closes via ESC key", async ({ page }) => {
-    await page.goto("/");
-
-    await page.getByRole("button", { name: "Sign Up" }).click();
-    await expect(page.getByText("Sign up flow coming soon...")).toBeVisible();
-
-    await page.keyboard.press("Escape");
-    await expect(page.getByText("Sign up flow coming soon...")).not.toBeVisible();
-  });
-
-  test("Login modal opens and closes via button click", async ({ page }) => {
-    await page.goto("/");
-
-    // Open modal
-    await page.getByRole("button", { name: "Login" }).click();
-    await expect(
-      page.getByRole("heading", { name: "Login", exact: true })
-    ).toBeVisible();
-    await expect(page.getByText("Login flow coming soon...")).toBeVisible();
-
-    // Close via X button
-    await page.getByLabel("Close modal").click();
-    await expect(page.getByText("Login flow coming soon...")).not.toBeVisible();
-  });
-
-  test("Login modal closes via overlay click", async ({ page }) => {
-    await page.goto("/");
-
-    await page.getByRole("button", { name: "Login" }).click();
-    await expect(page.getByText("Login flow coming soon...")).toBeVisible();
-
-    // Click overlay (not the modal content)
-    await page.locator('[class*="fixed inset-0"]').first().click({ position: { x: 10, y: 10 } });
-    await expect(page.getByText("Login flow coming soon...")).not.toBeVisible();
-  });
-
-  test("Login modal closes via ESC key", async ({ page }) => {
-    await page.goto("/");
-
-    await page.getByRole("button", { name: "Login" }).click();
-    await expect(page.getByText("Login flow coming soon...")).toBeVisible();
-
-    await page.keyboard.press("Escape");
-    await expect(page.getByText("Login flow coming soon...")).not.toBeVisible();
+    await page.getByRole("link", { name: "Login" }).click();
+    await expect(page).toHaveURL("/login");
   });
 });
 
