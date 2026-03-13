@@ -93,3 +93,11 @@ Document all questions and responses in this file.
 | Supabase project | `agvg-prod-v2` (pedqpmuclnoufqxvlhzx)                 |
 | Current gate     | Gate 4 — paused, awaiting prompt                      |
 | Next gate        | Gate 4 — Game Formats / Access Control UI             |
+
+---
+
+decision log alto-good-vibes-golf | 2026-03-13 | Gate 4 agent modified Hero component without explicit spec coverage, demoting Sign Up/Login to secondary links in favor of round CTAs. Reverted. Rule: homepage structure changes require explicit spec authorization — vague references like "(/) or profile page" do not constitute approval to restructure primary navigation hierarchy.
+
+---
+
+decision log alto-good-vibes-golf | 2026-03-13 | Gate 4 APPROVED by Shawn after device validation. Homepage reverted (Sign Up/Login primary, round CTAs removed). Post-login redirect to /round-history confirmed correct.
