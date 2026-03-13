@@ -9,5 +9,6 @@ export const config = {
   matcher: [
     '/profile/:path*',
     '/round-history/:path*',
+    '/round/:path*',
   ],
 }
