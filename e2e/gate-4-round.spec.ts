@@ -23,18 +23,17 @@ test.describe("Gate 4: Round History Page", () => {
 });
 
 test.describe("Gate 4: Home Page — Start Round CTA", () => {
-  test("home page has Start a Round link", async ({ page }) => {
+  // Note: Round CTAs were removed from homepage in Gate 4 review (homepage reverted to
+  // Sign Up/Login primaries). Round access is post-auth only via /round-history redirect.
+  test("home page has Sign Up and Login as primary CTAs", async ({ page }) => {
     await page.goto(`${BASE_URL}/`);
-    const startLink = page.getByRole("link", { name: /Start a Round/i });
-    await expect(startLink).toBeVisible();
-    await expect(startLink).toHaveAttribute("href", "/round/create");
+    await expect(page.getByRole("link", { name: "Sign Up" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Login" })).toBeVisible();
   });
 
-  test("home page has Round History link", async ({ page }) => {
-    await page.goto(`${BASE_URL}/`);
-    const historyLink = page.getByRole("link", { name: /Round History/i });
-    await expect(historyLink).toBeVisible();
-    await expect(historyLink).toHaveAttribute("href", "/round-history");
+  test("round-history redirects unauthenticated users to login", async ({ page }) => {
+    await page.goto(`${BASE_URL}/round-history`);
+    await expect(page).toHaveURL(/login/);
   });
 });
 

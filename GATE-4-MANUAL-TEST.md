@@ -9,8 +9,8 @@
 
 ## Pre-flight
 
-- [ ] You're logged in at https://alto-good-vibes-golf.vercel.app/login
-- [ ] You see the home page after login (or visit `/` while logged in)
+- [x] You're logged in at https://alto-good-vibes-golf.vercel.app/login
+- [x] You see the home page after login (or visit `/` while logged in)
 
 ---
 
