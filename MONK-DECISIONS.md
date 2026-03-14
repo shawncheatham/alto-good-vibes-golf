@@ -101,3 +101,7 @@ decision log alto-good-vibes-golf | 2026-03-13 | Gate 4 agent modified Hero comp
 ---
 
 decision log alto-good-vibes-golf | 2026-03-13 | Gate 4 APPROVED by Shawn after device validation. Homepage reverted (Sign Up/Login primary, round CTAs removed). Post-login redirect to /round-history confirmed correct.
+
+---
+
+decision log alto-good-vibes-golf | 2026-03-13 | Gate 5 APPROVED by Shawn. Game Catalog with 7 games, tier gating, inline rules detail, upgrade modal, Custom AI flow (3-step). Scoring adapters for all formats live. AI rules parser using Claude Haiku — markdown stripping + plain text prompt added post-approval. Guardrail relaxed to allow short conversational replies. AI flow refinement deferred to future iteration.
