@@ -80,7 +80,15 @@ export const OFF_TOPIC_PATTERNS = [
 
 const GOLF_TERMS = /\b(hole|par|birdie|eagle|bogey|skin|putt|stroke|drive|handicap|match|point|score|round|front|back|carry|double|triple|bet|win|lose|tie|play|player|team)\b/i;
 
+// Short conversational replies that are clearly in-context (not off-topic)
+const SHORT_OK = /^(yes|no|yeah|yep|nope|sure|ok|okay|correct|right|exactly|both|neither|all|none|same|different|either|maybe|definitely|absolutely|agreed|perfect|good|great|sounds good|that works|go for it|confirmed|confirm|proceed|continue|next|done)\.?!?$/i;
+
 export function isOffTopic(input: string): boolean {
-  if (OFF_TOPIC_PATTERNS.some(p => p.test(input))) return true;
-  return !GOLF_TERMS.test(input);
+  const trimmed = input.trim();
+  // Allow short affirmative/negative replies — they're responses to AI questions, not new topics
+  if (SHORT_OK.test(trimmed)) return false;
+  // Allow short inputs under 4 words — likely a direct answer to a clarifying question
+  if (trimmed.split(/\s+/).length <= 3 && !OFF_TOPIC_PATTERNS.some(p => p.test(trimmed))) return false;
+  if (OFF_TOPIC_PATTERNS.some(p => p.test(trimmed))) return true;
+  return !GOLF_TERMS.test(trimmed);
 }
