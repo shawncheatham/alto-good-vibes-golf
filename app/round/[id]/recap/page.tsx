@@ -6,6 +6,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { calculateStandings } from "@/lib/scoring";
 import { GAMES, GameId } from "@/lib/games";
+import { getSideBets, getSettlementSummary, SideBet, SettlementEntry } from "@/lib/actions/sideBets";
 
 interface Round {
   id: string;
@@ -41,6 +42,8 @@ export default function RecapPage() {
   const [round, setRound] = useState<Round | null>(null);
   const [players, setPlayers] = useState<Player[]>([]);
   const [scores, setScores] = useState<ScoreEntry[]>([]);
+  const [sideBets, setSideBets] = useState<SideBet[]>([]);
+  const [settlement, setSettlement] = useState<SettlementEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [shared, setShared] = useState(false);
 
@@ -57,6 +60,14 @@ export default function RecapPage() {
       if (r) setRound(r);
       if (p) setPlayers(p);
       if (s) setScores(s);
+
+      const [{ data: bets }, { data: settle }] = await Promise.all([
+        getSideBets(id as string),
+        getSettlementSummary(id as string),
+      ]);
+      if (bets) setSideBets(bets);
+      if (settle) setSettlement(settle);
+
       setLoading(false);
     };
     load();
@@ -91,6 +102,9 @@ export default function RecapPage() {
   });
   const { entries, carryover, holeWinners, matchResult } = ledgerState;
 
+  const hasSideBets = sideBets.length > 0;
+  const hasSettlement = settlement.length > 0 && settlement.some((e) => e.netAmount !== 0);
+
   // Build winner line based on game type
   const buildWinnerLine = (): { headline: string; sub: string } => {
     if (gameId === "matchplay") {
@@ -119,7 +133,7 @@ export default function RecapPage() {
       return { headline: "All Tied", sub: "Nassau · No clear winner" };
     }
 
-    // Skins-based (skins, wolf, chaosskins, custom)
+    // Skins-based
     const top = entries[0];
     const topSkins = top?.skins ?? 0;
     const skinsLabel = gameId === "chaosskins" ? "weighted skins" : "skins";
@@ -131,6 +145,42 @@ export default function RecapPage() {
 
   const { headline, sub } = buildWinnerLine();
 
+  // Bet icon helper
+  const getBetIcon = (bt: string) => {
+    const map: Record<string, string> = { hole: "🏌️", drive: "💥", pin: "🎯", birdie: "🐦", pressure: "🔥" };
+    return map[bt] ?? "🎲";
+  };
+  const getBetName = (bet: SideBet) => {
+    const names: Record<string, string> = {
+      hole: "Bet on Each Hole",
+      drive: "Longest Drive",
+      pin: "Closest to the Pin",
+      birdie: "Birdie or Better Bonus",
+      pressure: "Last Hole Pressure",
+    };
+    return names[bet.bet_type] ?? bet.bet_type;
+  };
+
+  // Build settlement transactions (from → to consolidation)
+  const buildTransactions = () => {
+    const txMap: Record<string, number> = {};
+    for (const entry of settlement) {
+      for (const tx of entry.transactions) {
+        if (tx.from === entry.playerId) {
+          // deduplication: only include from the payer's perspective
+          const key = `${tx.from}:${tx.to}`;
+          txMap[key] = (txMap[key] ?? 0) + tx.amount;
+        }
+      }
+    }
+    return Object.entries(txMap).map(([key, amount]) => {
+      const [from, to] = key.split(":");
+      return { from, to, amount: Math.round(amount * 100) / 100 };
+    });
+  };
+
+  const transactions = buildTransactions();
+
   // Build recap text for sharing
   const buildRecapText = (): string => {
     const lines: string[] = [
@@ -138,6 +188,16 @@ export default function RecapPage() {
       `${gameDisplayName} · ${players.map(p => p.name).join(", ")}`,
       "",
     ];
+
+    if (hasSettlement) {
+      lines.push("💵 Settlement:");
+      for (const tx of transactions) {
+        const fromPlayer = players.find(p => p.id === tx.from);
+        const toPlayer = players.find(p => p.id === tx.to);
+        lines.push(`• ${fromPlayer?.name ?? "?"} → ${toPlayer?.name ?? "?"} $${tx.amount.toFixed(2)}`);
+      }
+      lines.push("");
+    }
 
     if (gameId === "matchplay") {
       lines.push(`🏆 ${headline}`);
@@ -159,6 +219,16 @@ export default function RecapPage() {
         : "🏆 No skins won — all holes tied!");
       if (carryover != null && carryover > 0) {
         lines.push(`${carryover} skin${carryover !== 1 ? "s" : ""} left on the table`);
+      }
+    }
+
+    if (hasSideBets) {
+      lines.push("", "Side Bets:");
+      for (const bet of sideBets) {
+        const finalResults = (bet.results ?? []).filter((r) => r.is_final);
+        const topWinnerId = finalResults[0]?.winner_ids?.[0];
+        const topWinner = topWinnerId ? players.find(p => p.id === topWinnerId)?.name : null;
+        lines.push(`${getBetIcon(bet.bet_type)} ${getBetName(bet)}${topWinner ? ` — ${topWinner} wins` : " — Pending"}`);
       }
     }
 
@@ -274,6 +344,73 @@ export default function RecapPage() {
       </header>
 
       <main style={{ padding: 16 }}>
+
+        {/* Settlement card — TOP, shown when side bets have final results */}
+        {hasSideBets && hasSettlement && (
+          <div style={{ background: "#1a3a2a", borderRadius: 16, overflow: "hidden", marginBottom: 20, boxShadow: "var(--gvg-shadow-lg)" }}>
+            <div style={{ padding: "16px 20px" }}>
+              <div style={{ fontFamily: "var(--gvg-font-display)", fontSize: 18, fontWeight: 700, color: "white" }}>
+                💵 Settlement
+              </div>
+              <div style={{ fontSize: 12, color: "rgba(255,255,255,0.5)", marginTop: 2 }}>
+                Net across all games — handle off-app
+              </div>
+            </div>
+
+            {/* Net per player */}
+            {settlement.map((entry) => {
+              const player = players.find((p) => p.id === entry.playerId);
+              if (!player) return null;
+              const isPositive = entry.netAmount > 0;
+              const isNegative = entry.netAmount < 0;
+              return (
+                <div key={entry.playerId} style={{ display: "flex", alignItems: "center", gap: 12, padding: "16px 20px", borderTop: "1px solid rgba(255,255,255,0.1)" }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 700, color: "white", fontSize: 16 }}>{player.name}</div>
+                    <div style={{ fontSize: 12, color: "rgba(255,255,255,0.5)", marginTop: 2 }}>
+                      {isPositive ? "Receives" : isNegative ? "Owes" : "Even"}
+                    </div>
+                  </div>
+                  <div style={{
+                    fontFamily: "var(--gvg-font-display)",
+                    fontSize: 28,
+                    fontWeight: 700,
+                    color: isPositive ? "#86efac" : isNegative ? "#fca5a5" : "rgba(255,255,255,0.4)",
+                  }}>
+                    {isPositive ? `+$${entry.netAmount.toFixed(2)}` :
+                     isNegative ? `-$${Math.abs(entry.netAmount).toFixed(2)}` : "—"}
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* Who pays who */}
+            {transactions.length > 0 && (
+              <div style={{ padding: "12px 20px 16px", borderTop: "1px solid rgba(255,255,255,0.1)" }}>
+                <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 12 }}>
+                  Who pays who
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {transactions.map((tx, i) => {
+                    const fromPlayer = players.find(p => p.id === tx.from);
+                    const toPlayer = players.find(p => p.id === tx.to);
+                    return (
+                      <div key={i} style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                        <div style={{ flex: 1, fontSize: 14, color: "rgba(255,255,255,0.8)" }}>
+                          <strong style={{ color: "white" }}>{fromPlayer?.name ?? "?"}</strong> → <strong style={{ color: "white" }}>{toPlayer?.name ?? "?"}</strong>
+                        </div>
+                        <div style={{ fontFamily: "var(--gvg-font-display)", fontSize: 18, fontWeight: 700, color: "#fca5a5" }}>
+                          ${tx.amount.toFixed(2)}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Course + Winner Hero */}
         <div style={{ background: "linear-gradient(135deg, var(--gvg-grass-dark) 0%, var(--gvg-grass) 100%)", borderRadius: 16, padding: 24, color: "white", marginBottom: 20, textAlign: "center" }}>
           <div style={{ fontSize: 48, marginBottom: 8 }}>🏆</div>
@@ -298,6 +435,71 @@ export default function RecapPage() {
             </div>
           )}
         </div>
+
+        {/* Side Bet Results */}
+        {hasSideBets && (
+          <>
+            <h3 style={{ fontFamily: "var(--gvg-font-display)", fontSize: 18, fontWeight: 700, color: "var(--gvg-gray-900)", marginBottom: 12 }}>Side Bets</h3>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 20 }}>
+              {sideBets.map((bet) => {
+                const betPlayers = players.filter((p) => bet.player_ids.includes(p.id));
+                const finalResults = (bet.results ?? []).filter((r) => r.is_final);
+                const holeRange = bet.hole_from === bet.hole_to
+                  ? `Hole ${bet.hole_from}`
+                  : `Holes ${bet.hole_from}–${bet.hole_to}`;
+
+                const playerResults = betPlayers.map((p) => {
+                  const wins = finalResults.filter((r) => r.winner_ids?.includes(p.id));
+                  const totalWon = wins.reduce((sum, r) => sum + (r.amount_won ?? 0), 0);
+                  const losses = finalResults.filter((r) => r.winner_ids && !r.winner_ids.includes(p.id));
+                  const totalLost = losses.reduce((sum, r) => {
+                    const loserCount = bet.player_ids.length - (r.winner_ids?.length ?? 0);
+                    return sum + (r.amount_won ?? 0) / (loserCount || 1);
+                  }, 0);
+                  const net = totalWon - totalLost;
+                  return { player: p, net, wins: wins.length };
+                });
+                playerResults.sort((a, b) => b.net - a.net);
+
+                return (
+                  <div key={bet.id} style={{ background: "var(--gvg-white)", borderRadius: 16, overflow: "hidden", boxShadow: "var(--gvg-shadow-md)", borderLeft: "4px solid var(--gvg-accent)" }}>
+                    <div style={{ padding: "16px 20px", background: "#fff7ed", display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
+                      <div>
+                        <div style={{ fontWeight: 700, color: "#c2410c", fontSize: 14 }}>
+                          {getBetIcon(bet.bet_type)} {getBetName(bet)}
+                        </div>
+                        <div style={{ fontSize: 12, color: "#b45309", marginTop: 2 }}>
+                          {holeRange} · ${bet.amount.toFixed(2)}{bet.bet_type === "hole" || bet.bet_type === "birdie" ? "/hole" : " winner-takes-all"}
+                        </div>
+                      </div>
+                    </div>
+                    {playerResults.map(({ player, net, wins }, i) => (
+                      <div key={player.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 20px", borderBottom: i < playerResults.length - 1 ? "1px solid var(--gvg-gray-100)" : "none" }}>
+                        <div style={{ width: 28, textAlign: "center", fontSize: 18, flexShrink: 0 }}>
+                          {i === 0 && net > 0 ? "🏆" : "—"}
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontWeight: 700, color: "var(--gvg-gray-800)" }}>{player.name}</div>
+                          <div style={{ fontSize: 12, color: "var(--gvg-gray-500)", marginTop: 2 }}>
+                            {wins > 0 ? `${wins} hole${wins !== 1 ? "s" : ""} won` : "0 holes won"}
+                          </div>
+                        </div>
+                        <div style={{
+                          fontFamily: "var(--gvg-font-display)",
+                          fontSize: 20,
+                          fontWeight: 700,
+                          color: net > 0 ? "#16a34a" : net < 0 ? "var(--gvg-error)" : "var(--gvg-gray-400)",
+                        }}>
+                          {net === 0 ? "—" : net > 0 ? `+$${net.toFixed(2)}` : `-$${Math.abs(net).toFixed(2)}`}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
 
         {/* Hole Highlights */}
         {holeWinners && holeWinners.length > 0 && (

@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { calculateStandings, LedgerEntry } from "@/lib/scoring";
 import { GAMES, GameId } from "@/lib/games";
+import { getSideBets, calculateSideBetResults, setManualWinner, SideBet } from "@/lib/actions/sideBets";
 
 interface Round {
   id: string;
@@ -32,6 +33,10 @@ interface ScoreEntry {
   strokes: number | null;
 }
 
+interface UserProfile {
+  tier: string;
+}
+
 export default function ScorecardPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -46,22 +51,32 @@ export default function ScorecardPage() {
   const [loading, setLoading] = useState(true);
   const [showMenu, setShowMenu] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const lastEntryRef = useRef<{ player_id: string; hole: number; strokes: number } | null>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+
+  // Side bets state
+  const [sideBets, setSideBets] = useState<SideBet[]>([]);
+  const [manualWinnerBetId, setManualWinnerBetId] = useState<string | null>(null);
+
   const holeStripRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const load = async () => {
-      const [{ data: r }, { data: p }, { data: s }] = await Promise.all([
+      const { data: { user } } = await supabase.auth.getUser();
+
+      const [{ data: r }, { data: p }, { data: s }, { data: profile }] = await Promise.all([
         supabase.from("rounds").select("*").eq("id", id).single(),
         supabase.from("round_players").select("*").eq("round_id", id).order("position"),
         supabase.from("score_entries").select("*").eq("round_id", id),
+        user ? supabase.from("users").select("tier").eq("id", user.id).single() : Promise.resolve({ data: null }),
       ]);
+
       if (r) setRound(r);
       if (p) {
         setPlayers(p);
         setActivePlayerId(p[0]?.id ?? null);
       }
       if (s) setScores(s);
+      if (profile) setUserProfile(profile);
 
       if (p && s) {
         for (let h = 1; h <= 18; h++) {
@@ -72,6 +87,11 @@ export default function ScorecardPage() {
           }
         }
       }
+
+      // Load side bets
+      const { data: bets } = await getSideBets(id as string);
+      if (bets) setSideBets(bets);
+
       setLoading(false);
     };
     load();
@@ -91,11 +111,6 @@ export default function ScorecardPage() {
   };
 
   const upsertScore = useCallback(async (playerId: string, hole: number, strokes: number) => {
-    const existing = getScore(playerId, hole);
-    if (existing) {
-      lastEntryRef.current = { player_id: playerId, hole, strokes: existing.strokes ?? strokes };
-    }
-
     const { data, error } = await supabase
       .from("score_entries")
       .upsert({ round_id: id, player_id: playerId, hole, strokes, updated_at: new Date().toISOString() }, { onConflict: "round_id,player_id,hole" })
@@ -107,15 +122,14 @@ export default function ScorecardPage() {
         const filtered = prev.filter(s => !(s.player_id === playerId && s.hole === hole));
         return [...filtered, data];
       });
-    }
-  }, [id, supabase, scores]);
 
-  const undoLastEntry = useCallback(async () => {
-    if (!lastEntryRef.current) return;
-    const { player_id, hole, strokes } = lastEntryRef.current;
-    await upsertScore(player_id, hole, strokes);
-    lastEntryRef.current = null;
-  }, [upsertScore]);
+      // After score save, recalculate side bet results
+      await calculateSideBetResults(id as string);
+      // Refresh side bets to get updated results
+      const { data: updatedBets } = await getSideBets(id as string);
+      if (updatedBets) setSideBets(updatedBets);
+    }
+  }, [id, supabase]);
 
   const adjustScore = (playerId: string, hole: number, delta: number) => {
     const current = getScore(playerId, hole)?.strokes ?? 1;
@@ -141,6 +155,57 @@ export default function ScorecardPage() {
     if (hole === currentHole) return "active";
     if (isHoleComplete(hole)) return "complete";
     return "pending";
+  };
+
+  // Compute which holes have an active side bet
+  const betHoleSet = new Set<number>();
+  for (const bet of sideBets) {
+    for (let h = bet.hole_from; h <= bet.hole_to; h++) {
+      betHoleSet.add(h);
+    }
+  }
+
+  // Active side bets for current hole
+  const activeBetsForHole = sideBets.filter(
+    (bet) => currentHole >= bet.hole_from && currentHole <= bet.hole_to
+  );
+
+  // For each drive/pin bet on current hole: check if all participating players have scored
+  const getBetType = (bt: string) => {
+    const map: Record<string, string> = { hole: "🏌️", drive: "💥", pin: "🎯", birdie: "🐦", pressure: "🔥" };
+    return map[bt] ?? "🎲";
+  };
+
+  const getBetName = (bet: SideBet) => {
+    const names: Record<string, string> = {
+      hole: "Bet on Each Hole",
+      drive: "Longest Drive",
+      pin: "Closest to the Pin",
+      birdie: "Birdie or Better Bonus",
+      pressure: "Last Hole Pressure",
+    };
+    return names[bet.bet_type] ?? bet.bet_type;
+  };
+
+  const isManualBetReadyForWinner = (bet: SideBet) => {
+    if (bet.bet_type !== "drive" && bet.bet_type !== "pin") return false;
+    // Check if already has a final result
+    const finalResult = bet.results?.find((r) => r.is_final);
+    if (finalResult) return false;
+    // Check if all participating players have scores on the bet hole
+    return bet.player_ids.every((pid) => {
+      const s = getScore(pid, bet.hole_from);
+      return s && s.strokes != null;
+    });
+  };
+
+  const handleSetManualWinner = async (bet: SideBet, winnerId: string) => {
+    setManualWinnerBetId(bet.id);
+    await setManualWinner(bet.id, [winnerId]);
+    // Refresh side bets
+    const { data: updatedBets } = await getSideBets(id as string);
+    if (updatedBets) setSideBets(updatedBets);
+    setManualWinnerBetId(null);
   };
 
   const currentHoleScores = players.map(p => ({
@@ -181,8 +246,9 @@ export default function ScorecardPage() {
   // Game display name
   const gameDisplayName = round?.game_label || (GAMES[gameId as GameId]?.name ?? "Skins");
 
+  const isPlayersClub = userProfile?.tier === "players_club";
+
   const renderLedgerEntry = (entry: LedgerEntry, rank: number) => {
-    // Determine display based on game type
     if (gameId === "nassau") {
       return (
         <div key={entry.playerId} style={{ background: "var(--gvg-white)", border: "2px solid var(--gvg-gray-200)", borderRadius: 12, padding: 16 }}>
@@ -230,7 +296,7 @@ export default function ScorecardPage() {
       );
     }
 
-    // Default: skins-based (skins, wolf, chaosskins, custom)
+    // Default: skins-based
     const skins = entry.skins ?? 0;
     const ties = entry.ties ?? 0;
     return (
@@ -278,6 +344,11 @@ export default function ScorecardPage() {
             <p style={{ fontSize: 14, opacity: 0.9, marginTop: 4 }}>
               {gameDisplayName} · Hole {currentHole} of {round.holes}
               {chaosMultiplier && chaosMultiplier > 1 ? ` · ${chaosMultiplier}× multiplier` : ""}
+              {sideBets.length > 0 && (
+                <span style={{ background: "rgba(249,115,22,0.9)", color: "white", fontSize: 10, fontWeight: 700, padding: "2px 6px", borderRadius: 999, marginLeft: 6 }}>
+                  🎲 {sideBets.length} side bet{sideBets.length !== 1 ? "s" : ""}
+                </span>
+              )}
             </p>
           </div>
           <div style={{ position: "relative" }}>
@@ -289,7 +360,16 @@ export default function ScorecardPage() {
               ···
             </button>
             {showMenu && (
-              <div style={{ position: "absolute", top: "calc(100% + 8px)", right: 0, background: "white", borderRadius: 12, boxShadow: "var(--gvg-shadow-lg)", border: "1px solid var(--gvg-gray-200)", minWidth: 180, zIndex: 200 }}>
+              <div style={{ position: "absolute", top: "calc(100% + 8px)", right: 0, background: "white", borderRadius: 12, boxShadow: "var(--gvg-shadow-lg)", border: "1px solid var(--gvg-gray-200)", minWidth: 200, zIndex: 200 }}>
+                {isPlayersClub && (
+                  <button
+                    onClick={() => { setShowMenu(false); router.push(`/round/${id}/side-bets/new`); }}
+                    style={{ width: "100%", textAlign: "left", padding: "14px 16px", background: "none", border: "none", cursor: "pointer", fontSize: 15, color: "var(--gvg-gray-700)", borderBottom: "1px solid var(--gvg-gray-100)", display: "flex", alignItems: "center", gap: 10 }}
+                  >
+                    <span>🎲</span>
+                    <span style={{ fontWeight: 600 }}>Add Side Bet</span>
+                  </button>
+                )}
                 <button
                   onClick={() => { setShowMenu(false); abandonRound(); }}
                   style={{ width: "100%", textAlign: "left", padding: "14px 16px", background: "none", border: "none", cursor: "pointer", fontSize: 15, color: "var(--gvg-gray-700)", borderBottom: "1px solid var(--gvg-gray-100)" }}
@@ -309,46 +389,133 @@ export default function ScorecardPage() {
       </header>
 
       {/* Hole Strip */}
-      <div style={{ background: "var(--gvg-gray-100)", borderBottom: "2px solid var(--gvg-gray-200)", padding: "16px 8px", overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-        <div ref={holeStripRef} style={{ display: "flex", gap: 8, minWidth: "min-content", padding: "0 8px" }}>
+      <div style={{ background: "var(--gvg-grass-dark)", padding: "8px 16px", overflowX: "auto", WebkitOverflowScrolling: "touch", scrollbarWidth: "none" }}>
+        <div ref={holeStripRef} style={{ display: "flex", gap: 4, minWidth: "min-content" }}>
           {Array.from({ length: 18 }, (_, i) => i + 1).map(hole => {
             const state = getHoleState(hole);
+            const hasBet = betHoleSet.has(hole);
             const mult = gameId === "chaosskins" ? (round?.metadata?.chaosMultipliers?.[hole - 1] ?? 1) : null;
             return (
-              <div key={hole} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, minWidth: 44 }} data-hole={hole}>
-                <button
-                  onClick={() => setCurrentHole(hole)}
-                  style={{
-                    width: 40, height: 40,
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    borderRadius: 8, fontWeight: 600, fontSize: 14, cursor: "pointer",
-                    transition: "all 0.2s",
-                    background: state === "active" ? "var(--gvg-accent)" : state === "complete" ? "var(--gvg-success)" : "var(--gvg-white)",
-                    color: state === "pending" ? "var(--gvg-gray-400)" : "white",
-                    border: `2px solid ${state === "active" ? "var(--gvg-accent)" : state === "complete" ? "var(--gvg-success)" : "var(--gvg-gray-300)"}`,
-                    boxShadow: state === "active" ? "var(--gvg-shadow-md)" : "none",
-                  }}
+              <div
+                key={hole}
+                data-hole={hole}
+                style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, cursor: "pointer", flexShrink: 0 }}
+                onClick={() => setCurrentHole(hole)}
+              >
+                <div style={{
+                  width: 32, height: 32,
+                  borderRadius: "50%",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: 12, fontWeight: 700,
+                  transition: "all 0.15s",
+                  background: state === "active" ? "var(--gvg-accent)" : state === "complete" ? "rgba(255,255,255,0.15)" : "transparent",
+                  color: state === "pending" ? "rgba(255,255,255,0.4)" : "white",
+                  border: `1.5px solid ${state === "active" ? "rgba(255,255,255,0.5)" : "transparent"}`,
+                  transform: state === "active" ? "scale(1.15)" : "none",
+                }}
                   aria-label={`Hole ${hole}, ${state}`}
                 >
                   {hole}
-                </button>
-                <span style={{ fontSize: 14, lineHeight: 1 }}>
-                  {state === "complete" ? "✓" : state === "active" ? "◆" : mult && mult > 1 ? `${mult}×` : "○"}
-                </span>
+                </div>
+                {/* Dot indicator: orange if bet, otherwise state symbol */}
+                <div style={{
+                  width: 5,
+                  height: 5,
+                  borderRadius: "50%",
+                  background: hasBet ? "#f97316" : "transparent",
+                }} />
+                {!hasBet && (
+                  <span style={{ fontSize: 8, color: "rgba(255,255,255,0.4)", lineHeight: 1, marginTop: -4 }}>
+                    {state === "complete" ? "✓" : state === "active" ? "◆" : mult && mult > 1 ? `${mult}×` : ""}
+                  </span>
+                )}
               </div>
             );
           })}
-        </div>
-        <div style={{ display: "flex", gap: 16, justifyContent: "center", marginTop: 12, fontSize: 12, color: "var(--gvg-gray-600)", flexWrap: "wrap" }}>
-          <span>✓ = scores entered</span>
-          <span>◆ = active hole</span>
-          <span>○ = pending</span>
         </div>
       </div>
 
       {/* Scorecard View */}
       {view === "scorecard" && (
         <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 16 }}>
+
+          {/* Active bet callout strip */}
+          {activeBetsForHole.length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {activeBetsForHole.map((bet) => {
+                const betPlayerNames = players
+                  .filter((p) => bet.player_ids.includes(p.id))
+                  .map((p) => p.name)
+                  .join(", ");
+                const isReadyForWinner = isManualBetReadyForWinner(bet);
+                const finalResult = bet.results?.find((r) => r.is_final);
+                const winnerName = finalResult?.winner_ids?.[0]
+                  ? players.find((p) => p.id === finalResult.winner_ids![0])?.name
+                  : null;
+
+                return (
+                  <div
+                    key={bet.id}
+                    style={{
+                      background: "#fff7ed",
+                      border: "1.5px solid #fed7aa",
+                      borderRadius: 12,
+                      padding: "12px 16px",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      <span style={{ fontSize: 20 }}>{getBetType(bet.bet_type)}</span>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 14, fontWeight: 600, color: "#92400e", lineHeight: 1.3 }}>
+                          {getBetName(bet)} · ${bet.amount.toFixed(2)}
+                        </div>
+                        <div style={{ fontSize: 12, color: "#b45309", marginTop: 2 }}>
+                          {betPlayerNames}
+                          {winnerName && ` · Winner: ${winnerName} ✓`}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Winner select for drive/pin when all players have scored */}
+                    {isReadyForWinner && (
+                      <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid #fed7aa" }}>
+                        <p style={{ fontSize: 12, color: "#92400e", fontWeight: 600, marginBottom: 8 }}>
+                          👆 Tap to select winner
+                        </p>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                          {players
+                            .filter((p) => bet.player_ids.includes(p.id))
+                            .map((p) => (
+                              <button
+                                key={p.id}
+                                onClick={() => handleSetManualWinner(bet, p.id)}
+                                disabled={manualWinnerBetId === bet.id}
+                                style={{
+                                  padding: "10px 14px",
+                                  background: "white",
+                                  border: "1.5px solid #fed7aa",
+                                  borderRadius: 8,
+                                  fontSize: 14,
+                                  fontWeight: 600,
+                                  color: "#c2410c",
+                                  cursor: manualWinnerBetId === bet.id ? "not-allowed" : "pointer",
+                                  textAlign: "left",
+                                  opacity: manualWinnerBetId === bet.id ? 0.6 : 1,
+                                }}
+                              >
+                                {p.name}
+                              </button>
+                            ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Player score cards */}
           {currentHoleScores.map(({ player, score }) => {
             const isActive = player.id === activePlayerId;
             const hasScore = score && score.strokes != null;
@@ -402,14 +569,8 @@ export default function ScorecardPage() {
                         aria-label="Increase score"
                       >+</button>
                     </div>
-                    <p style={{ textAlign: "center", fontSize: 14, color: "var(--gvg-gray-600)", marginTop: 8 }}>
-                      Auto-saves ·{" "}
-                      <button
-                        onClick={e => { e.stopPropagation(); undoLastEntry(); }}
-                        style={{ background: "none", border: "none", color: "var(--gvg-accent)", textDecoration: "underline", cursor: "pointer", fontSize: 14, fontWeight: 600, padding: 0 }}
-                      >
-                        Undo last entry
-                      </button>
+                    <p style={{ textAlign: "center", fontSize: 14, color: "var(--gvg-gray-500)", marginTop: 8 }}>
+                      Auto-saves
                     </p>
                   </div>
                 )}
