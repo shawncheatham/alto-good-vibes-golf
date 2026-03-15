@@ -33,27 +33,27 @@ CREATE TABLE side_bet_results (
 -- =====================
 ALTER TABLE side_bets ENABLE ROW LEVEL SECURITY;
 
--- Authenticated users can SELECT side bets for rounds they participate in
+-- Authenticated users can SELECT side bets for rounds they created
 CREATE POLICY "side_bets_select" ON side_bets
   FOR SELECT
   TO authenticated
   USING (
     EXISTS (
-      SELECT 1 FROM round_players rp
-      WHERE rp.round_id = side_bets.round_id
-        AND rp.user_id = auth.uid()
+      SELECT 1 FROM rounds r
+      WHERE r.id = side_bets.round_id
+        AND r.created_by = auth.uid()
     )
   );
 
--- Authenticated users can INSERT side bets for rounds they participate in
+-- Authenticated users can INSERT side bets for rounds they created
 CREATE POLICY "side_bets_insert" ON side_bets
   FOR INSERT
   TO authenticated
   WITH CHECK (
     EXISTS (
-      SELECT 1 FROM round_players rp
-      WHERE rp.round_id = side_bets.round_id
-        AND rp.user_id = auth.uid()
+      SELECT 1 FROM rounds r
+      WHERE r.id = side_bets.round_id
+        AND r.created_by = auth.uid()
     )
   );
 
@@ -62,16 +62,16 @@ CREATE POLICY "side_bets_insert" ON side_bets
 -- =====================
 ALTER TABLE side_bet_results ENABLE ROW LEVEL SECURITY;
 
--- Authenticated users can SELECT results for rounds they participate in
+-- Authenticated users can SELECT results for rounds they created
 CREATE POLICY "side_bet_results_select" ON side_bet_results
   FOR SELECT
   TO authenticated
   USING (
     EXISTS (
       SELECT 1 FROM side_bets sb
-      JOIN round_players rp ON rp.round_id = sb.round_id
+      JOIN rounds r ON r.id = sb.round_id
       WHERE sb.id = side_bet_results.side_bet_id
-        AND rp.user_id = auth.uid()
+        AND r.created_by = auth.uid()
     )
   );
 
