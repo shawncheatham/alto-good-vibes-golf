@@ -471,3 +471,21 @@ export async function getSettlementSummary(
 
   return { data: entries, error: null };
 }
+
+// ─── getUserTier ───────────────────────────────────────────────────────────────
+// Server-side tier lookup — reliable because cookies are forwarded server-side.
+// Use this instead of a client-side supabase query to avoid auth race conditions.
+export async function getUserTier(): Promise<{ tier: string | null; error: string | null }> {
+  const supabase = await createClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) return { tier: null, error: "Not authenticated" };
+
+  const { data, error } = await supabase
+    .from("users")
+    .select("tier")
+    .eq("id", user.id)
+    .single();
+
+  if (error || !data) return { tier: null, error: error?.message ?? "User not found" };
+  return { tier: data.tier, error: null };
+}

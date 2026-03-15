@@ -8,9 +8,9 @@
 
 ## Prerequisites
 
-- [ ] Logged in as a **Players Club** account
-- [ ] At least one active round exists (or create one in the test)
-- [ ] Round has 2+ players
+- [x] Logged in as a **Players Club** account
+- [x] At least one active round exists (or create one in the test)
+- [x] Round has 2+ players
 
 ---
 
@@ -28,7 +28,7 @@
 
 ## 2. Add Side Bet — Entry Point
 
-- [ ] Open an active round → scorecard
+- [x] Open an active round → scorecard
 - [ ] Tap **···** menu
 - [ ] **Expected:** "Add Side Bet" is the first item in the menu
 

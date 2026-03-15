@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { calculateStandings, LedgerEntry } from "@/lib/scoring";
 import { GAMES, GameId } from "@/lib/games";
-import { getSideBets, calculateSideBetResults, setManualWinner, SideBet } from "@/lib/actions/sideBets";
+import { getSideBets, calculateSideBetResults, setManualWinner, getUserTier, SideBet } from "@/lib/actions/sideBets";
 
 interface Round {
   id: string;
@@ -61,13 +61,11 @@ export default function ScorecardPage() {
 
   useEffect(() => {
     const load = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-
-      const [{ data: r }, { data: p }, { data: s }, { data: profile }] = await Promise.all([
+      const [{ data: r }, { data: p }, { data: s }, tierResult] = await Promise.all([
         supabase.from("rounds").select("*").eq("id", id).single(),
         supabase.from("round_players").select("*").eq("round_id", id).order("position"),
         supabase.from("score_entries").select("*").eq("round_id", id),
-        user ? supabase.from("users").select("tier").eq("id", user.id).single() : Promise.resolve({ data: null }),
+        getUserTier(),
       ]);
 
       if (r) setRound(r);
@@ -76,7 +74,7 @@ export default function ScorecardPage() {
         setActivePlayerId(p[0]?.id ?? null);
       }
       if (s) setScores(s);
-      if (profile) setUserProfile(profile);
+      if (tierResult.tier) setUserProfile({ tier: tierResult.tier });
 
       if (p && s) {
         for (let h = 1; h <= 18; h++) {
@@ -370,6 +368,13 @@ export default function ScorecardPage() {
                     <span style={{ fontWeight: 600 }}>Add Side Bet</span>
                   </button>
                 )}
+                <button
+                  onClick={() => { setShowMenu(false); router.push("/round-history"); }}
+                  style={{ width: "100%", textAlign: "left", padding: "14px 16px", background: "none", border: "none", cursor: "pointer", fontSize: 15, color: "var(--gvg-gray-700)", borderBottom: "1px solid var(--gvg-gray-100)", display: "flex", alignItems: "center", gap: 10 }}
+                >
+                  <span>🏠</span>
+                  <span>My Rounds</span>
+                </button>
                 <button
                   onClick={() => { setShowMenu(false); abandonRound(); }}
                   style={{ width: "100%", textAlign: "left", padding: "14px 16px", background: "none", border: "none", cursor: "pointer", fontSize: 15, color: "var(--gvg-gray-700)", borderBottom: "1px solid var(--gvg-gray-100)" }}
