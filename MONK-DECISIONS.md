@@ -105,3 +105,23 @@ decision log alto-good-vibes-golf | 2026-03-13 | Gate 4 APPROVED by Shawn after 
 ---
 
 decision log alto-good-vibes-golf | 2026-03-13 | Gate 5 APPROVED by Shawn. Game Catalog with 7 games, tier gating, inline rules detail, upgrade modal, Custom AI flow (3-step). Scoring adapters for all formats live. AI rules parser using Claude Haiku — markdown stripping + plain text prompt added post-approval. Guardrail relaxed to allow short conversational replies. AI flow refinement deferred to future iteration.
+
+---
+
+## Gate 6 (2026-03-14)
+
+### Decision: Longest Drive / Closest to Pin — manual winner UX
+**Decision:** After the designated hole is complete (all players have scores), show a tap-to-select winner UI in the active bet callout on the scorecard. Tapping a player name saves them as winner to `side_bet_results`. Falls back to "Pending" if skipped.
+**Approved by:** Shawn (2026-03-14)
+
+### Decision: `side_bet_results` write access — service-role-only
+**Decision:** `side_bet_results` is writable via `supabaseAdmin` (service role) in server actions only. Same pattern as Gate 3 BMC webhook. RLS: readable by round participants, no client-side writes.
+**Approved by:** Shawn (2026-03-14)
+
+### Decision: `calculateSideBetResults` — split auto vs manual
+**Decision:** Auto-compute results for `hole`, `birdie`, and `pressure` bet types after each score save. `drive` and `pin` types skip auto-compute; winner comes from manual tap-select in scorecard callout.
+**Approved by:** Shawn (2026-03-14)
+
+### Decision: Gate 6 E2E smoke test scope
+**Decision:** Minimum bar — create a side bet, verify hole strip dot appears, verify ledger shows the bet, confirm recap settlement card renders. Full per-bet-type validation deferred to a later gate.
+**Approved by:** Shawn (2026-03-14)
